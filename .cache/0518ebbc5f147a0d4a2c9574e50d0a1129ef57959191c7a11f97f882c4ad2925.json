@@ -1,0 +1,97 @@
+{
+  "suggestions": [
+    {
+      "target_bin": "cg_transfer_size.cp_size.max[4096]",
+      "priority": "high",
+      "difficulty": "easy",
+      "suggestion": "Implement a basic memory-to-memory DMA transfer test specifically configured for the maximum transfer size of 4096 bytes. This test should use a simple incremental burst type and valid memory regions to isolate the 'max' size configuration.",
+      "test_outline": [
+        "Program DMA channel registers for source address, destination address, and a transfer length of 4096 bytes.",
+        "Ensure AXI masters and slaves are configured for valid, contiguous memory access.",
+        "Trigger the DMA transfer.",
+        "Monitor DMA status registers for completion and verify data integrity in the destination memory."
+      ],
+      "dependencies": [],
+      "reasoning": "This test directly targets the 'max' transfer size bin by explicitly setting the DMA's transfer length register to 4096 bytes. All other size bins (small, medium, large) are covered, indicating the basic DMA transfer mechanism works, but this specific boundary condition is missed due to a simple configuration gap."
+    },
+    {
+      "target_bin": "cg_transfer_size.cp_burst_type.wrap",
+      "priority": "high",
+      "difficulty": "medium",
+      "suggestion": "Design a memory-to-memory DMA transfer where the source or destination address range crosses a defined AXI wrap boundary (e.g., 256-byte or 1KB boundary, depending on AXI bus width and system configuration). Configure the DMA with an incremental burst type, and use a transfer length and starting address that forces the AXI master to generate a WRAP burst. For instance, start a 64-byte transfer at an address like 0xXXXFC0 and require a WRAP_16 burst to cross 0xXX0000.",
+      "test_outline": [
+        "Determine the AXI wrap boundary for the system (e.g., 256 bytes for a WRAP_16 burst).",
+        "Program DMA channel registers for a source address that is just before a wrap boundary (e.g., `wrap_boundary - (burst_size * (burst_length / 2))`).",
+        "Set destination address and transfer length (e.g., 64 bytes) such that the transfer crosses the wrap boundary.",
+        "Trigger the DMA transfer.",
+        "Monitor AXI bus for WRAP burst transactions and verify data integrity upon completion."
+      ],
+      "dependencies": [],
+      "reasoning": "The 'wrap' burst type bin is entirely uncovered. This test specifically aims to hit it by creating an address alignment and transfer size combination that mandates the DMA engine to issue a WRAP burst on the AXI bus. Successfully covering this bin will also help cover the cross bins like `<small, wrap>`, `<medium, wrap>`, `<large, wrap>` by varying the transfer length while maintaining the wrap condition."
+    },
+    {
+      "target_bin": "cg_channel_arbitration.cp_active_channels.four_channels",
+      "priority": "high",
+      "difficulty": "hard",
+      "suggestion": "Develop a concurrency test where four independent DMA channels are programmed with distinct memory transfer tasks and started almost simultaneously. The transfers should be long enough to ensure sustained activity and contention for the AXI bus. Monitor the DMA's arbitration mechanism to ensure all four channels receive service.",
+      "test_outline": [
+        "Configure four DMA channels with unique (but valid) source/destination addresses and transfer lengths (e.g., medium to large sizes).",
+        "Program a dummy initial transfer for each channel to ensure registers are stable.",
+        "Trigger all four DMA channels within a very short time window (e.g., back-to-back register writes to start).",
+        "Monitor the AXI bus activity to confirm interleaved transfers from different channel IDs.",
+        "Wait for all channels to complete and verify data integrity for all transfers."
+      ],
+      "dependencies": [],
+      "reasoning": "The 'four_channels' bin is part of a 'high_concurrency_gap' pattern. This test directly addresses it by simultaneously activating four DMA channels, forcing the DMA's internal arbitration logic to engage. This builds on the already covered 'one', 'two', and 'three_channels' by escalating the concurrency level. A successful test would validate the fair and correct arbitration under increased load."
+    },
+    {
+      "target_bin": "cg_error_scenarios.cp_error_type.decode_error",
+      "priority": "high",
+      "difficulty": "hard",
+      "suggestion": "Create a test scenario where the DMA is configured to initiate a transfer to or from an intentionally invalid or unmapped memory address. This will require modifying the AXI slave agent or the AXI interconnect model to respond with a DECERR (decode error) when targeted with these specific invalid addresses, rather than a successful response or SLVERR.",
+      "test_outline": [
+        "Define an unmapped or invalid memory region in the system's memory map for AXI decode error generation.",
+        "Program a DMA channel to read from or write to an address within this invalid region.",
+        "Configure the AXI interconnect/slave agent to specifically return a 'DECERR' AXI response for accesses to this address range.",
+        "Trigger the DMA transfer and expect it to complete with a decode error status.",
+        "Verify the DMA's error status registers and ensure the transfer was halted appropriately without data corruption to other regions."
+      ],
+      "dependencies": [
+        "Testbench AXI slave/interconnect modification for error injection"
+      ],
+      "reasoning": "This bin is uncovered, indicating a gap in error injection scenarios. By directing the DMA to an explicitly unmapped address and having the AXI infrastructure respond with a DECERR, we directly test the DMA's ability to detect, report, and handle an AXI decode error. This is distinct from a slave error which is already covered."
+    },
+    {
+      "target_bin": "cg_error_scenarios.cp_error_recovery.retry_success",
+      "priority": "medium",
+      "difficulty": "easy",
+      "suggestion": "Implement a test where a DMA transfer encounters a transient AXI slave error (SLVERR) on its first attempt, but successfully completes upon retry. This requires a programmable AXI slave that can inject a single SLVERR for a specific transaction, then respond successfully to subsequent retries for that same transaction.",
+      "test_outline": [
+        "Configure the AXI slave agent to return a SLVERR for the *first* access to a specific address during a DMA transfer, and then return OKAY for subsequent retries to that address.",
+        "Program a DMA channel for a standard memory transfer (e.g., medium size, incremental burst).",
+        "Ensure the DMA channel is configured to enable retry mechanisms.",
+        "Trigger the DMA transfer and expect it to complete successfully, but with a retry event logged (if possible).",
+        "Verify data integrity at the destination and confirm the DMA reports a successful transfer status."
+      ],
+      "dependencies": [
+        "Testbench AXI slave modification for transient error injection"
+      ],
+      "reasoning": "The 'retry_success' bin is uncovered, indicating the DMA's error recovery path for transient errors hasn't been exercised. This test simulates a recoverable AXI bus issue, forcing the DMA to engage its retry logic and successfully complete the transfer, thus covering this critical recovery scenario. This is an 'easy' setup from a DMA config perspective, relying mostly on TB infrastructure."
+    },
+    {
+      "target_bin": "cross_size_burst.<large, incr>",
+      "priority": "medium",
+      "difficulty": "medium",
+      "suggestion": "Design a specific DMA transfer test for a large transfer size (e.g., 2048 bytes or more) using an incremental AXI burst. Pay close attention to address alignment, especially crossing 4KB or larger memory boundaries, to ensure the DMA generates sustained incremental bursts across these boundaries. It's possible existing tests only covered large incremental bursts within a single memory page, but not scenarios spanning multiple pages which might stress address increment logic differently.",
+      "test_outline": [
+        "Program DMA channel registers for a source address, destination address, and a large transfer length (e.g., 2048 bytes).",
+        "Ensure the start address and transfer length combine to cross at least one 4KB memory boundary (or whatever large system boundary is relevant) during the incremental burst.",
+        "Configure the DMA to use an incremental burst type.",
+        "Trigger the DMA transfer.",
+        "Monitor the AXI bus to confirm a sustained incremental burst pattern across the memory boundary and verify data integrity upon completion."
+      ],
+      "dependencies": [],
+      "reasoning": "While 'large' and 'incr' bins are individually covered, their specific combination for `large, incr` is missing in cross coverage. This suggests a corner case related to this specific combination was not hit. A likely scenario is handling large incremental transfers that span significant memory boundaries (e.g., crossing a 4KB page boundary or a larger memory block boundary), which might involve complex internal address management within the DMA. This test directly targets such a scenario."
+    }
+  ]
+}
