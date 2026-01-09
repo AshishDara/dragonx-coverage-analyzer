@@ -1,5 +1,6 @@
 from google import genai
 import json
+import time
 
 
 
@@ -8,27 +9,51 @@ GEMINI_API_KEY = "AIzaSyCYVqmdDSWbRrC5C7rWEfgBcoTgYF7PJEY"
 
 class GeminiClient:
     def __init__(self):
-        # Initialize client with API key
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        try:
+            self.client = genai.Client(api_key=GEMINI_API_KEY)
+        except Exception as e:
+            print("[LLM INIT ERROR]", str(e))
+            self.client = None
 
     def generate_json(self, prompt: str) -> dict:
         """
-        Send prompt to Gemini and return parsed JSON response
+        Safely call Gemini and return parsed JSON.
+        On failure, return a safe fallback structure.
         """
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
 
-        text = response.text.strip()
-
-        # Gemini may wrap JSON in markdown
-        if text.startswith("```"):
-            text = text.replace("```json", "").replace("```", "").strip()
+        if not self.client:
+            return {
+                "suggestions": [],
+                "error": "Gemini client not initialized"
+            }
 
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            raise ValueError(
-                "Gemini response is not valid JSON.\nRaw response:\n" + text
+            response = self.client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
             )
+
+            if not response or not response.text:
+                raise ValueError("Empty response from Gemini")
+
+            # Gemini sometimes returns extra text — extract JSON safely
+            text = response.text.strip()
+
+            # Try parsing directly
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                # Try to extract JSON block
+                start = text.find("{")
+                end = text.rfind("}")
+                if start != -1 and end != -1:
+                    return json.loads(text[start:end + 1])
+                else:
+                    raise ValueError("No valid JSON found in response")
+
+        except Exception as e:
+            print("[LLM ERROR]", str(e))
+            return {
+                "suggestions": [],
+                "error": "LLM request failed, please retry later"
+            }
