@@ -3,8 +3,10 @@ import json
 import time
 
 
-
 GEMINI_API_KEY = "AIzaSyCYVqmdDSWbRrC5C7rWEfgBcoTgYF7PJEY"
+
+# Minimum delay between LLM calls (seconds)
+MIN_API_INTERVAL = 2.0
 
 
 class GeminiClient:
@@ -15,10 +17,26 @@ class GeminiClient:
             print("[LLM INIT ERROR]", str(e))
             self.client = None
 
+        # Track last API call time
+        self.last_call_time = 0.0
+
+    def _rate_limit(self):
+        """
+        Enforce minimum interval between API calls
+        """
+        now = time.time()
+        elapsed = now - self.last_call_time
+
+        if elapsed < MIN_API_INTERVAL:
+            sleep_time = MIN_API_INTERVAL - elapsed
+            time.sleep(sleep_time)
+
+        self.last_call_time = time.time()
+
     def generate_json(self, prompt: str) -> dict:
         """
-        Safely call Gemini and return parsed JSON.
-        On failure, return a safe fallback structure.
+        Safely call Gemini with rate limiting and error handling.
+        Returns valid JSON or a safe fallback structure.
         """
 
         if not self.client:
@@ -28,6 +46,9 @@ class GeminiClient:
             }
 
         try:
+            # ---- Rate limiting ----
+            self._rate_limit()
+
             response = self.client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=prompt
@@ -36,14 +57,12 @@ class GeminiClient:
             if not response or not response.text:
                 raise ValueError("Empty response from Gemini")
 
-            # Gemini sometimes returns extra text — extract JSON safely
             text = response.text.strip()
 
-            # Try parsing directly
+            # ---- JSON parsing ----
             try:
                 return json.loads(text)
             except json.JSONDecodeError:
-                # Try to extract JSON block
                 start = text.find("{")
                 end = text.rfind("}")
                 if start != -1 and end != -1:
