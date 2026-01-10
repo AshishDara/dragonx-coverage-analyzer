@@ -6,7 +6,7 @@ import hashlib
 import os
 
 
-GEMINI_API_KEY = "AIzaSyCYVqmdDSWbRrC5C7rWEfgBcoTgYF7PJEY"
+GEMINI_API_KEY = "Paste your api key here"
 
 # Rate limiting: minimum delay between API calls (seconds)
 MIN_API_INTERVAL = 2.0
